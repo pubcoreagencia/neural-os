@@ -39,19 +39,15 @@ function Reveal({
   children,
   delay = 0,
   className,
-  as: Tag = "div",
 }: {
   children: React.ReactNode;
   delay?: number;
   className?: string;
-  as?: keyof React.JSX.IntrinsicElements;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
-  const MotionTag = motion(Tag as never);
   return (
-    <MotionTag
-      // @ts-expect-error ref forwarding to arbitrary tag
+    <motion.div
       ref={ref}
       initial="hidden"
       animate={inView ? "visible" : "hidden"}
@@ -60,7 +56,7 @@ function Reveal({
       className={className}
     >
       {children}
-    </MotionTag>
+    </motion.div>
   );
 }
 
