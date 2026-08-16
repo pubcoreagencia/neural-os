@@ -14,3 +14,4 @@ pnpm-debug.log*
 Thumbs.db
 .next-dev*.log
 tsconfig.tsbuildinfo
+data/memory-store.json
