@@ -16,3 +16,4 @@ Thumbs.db
 tsconfig.tsbuildinfo
 tsconfig.typecheck.tsbuildinfo
 data/memory-store.json
+tmp-test-memory/
