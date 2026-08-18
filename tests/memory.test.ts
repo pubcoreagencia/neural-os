@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ingestKnowledgeFromFile, searchKnowledge, getKnowledgeVersions, getProvenance } from "../lib/memory/service";
-import { readStore } from "../lib/memory/store";
+import { readJsonStore } from "../lib/memory/json-adapter";
 
 const tempDir = resolve(process.cwd(), "tmp-test-memory");
 
@@ -28,7 +28,7 @@ test("ingests markdown into knowledge, chunks and provenance", async () => {
   assert.equal(knowledge.title, "PUB Master Context");
   assert.ok(knowledge.matches.length > 0);
 
-  const store = await readStore();
+  const store = await readJsonStore();
   assert.equal(store.knowledge.length, 1);
   assert.ok(store.chunks.length > 0);
 });

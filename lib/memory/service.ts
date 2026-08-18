@@ -1,12 +1,18 @@
 import { randomUUID, createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { cleanText, chunkText, parseSourceFile } from "./parser";
+import { EMBEDDING_PROVIDER, MEMORY_BACKEND, VECTOR_STORE_BACKEND, hasDatabaseUrl } from "./config";
+import { createEmbeddingProviderSelection } from "./embedding-providers";
 import { DeterministicEmbeddingProvider } from "./embeddings";
-import { readStore, writeStore, nextVersion } from "./store";
+import { cleanText, chunkText, parseSourceFile } from "./parser";
+import { createJsonRepositories, createPgRepositories } from "./repositories";
 import { buildKnowledgeView, scoreChunks } from "./retrieval";
-import type { KnowledgeChunk, KnowledgeRecord, KnowledgeSource } from "./types";
+import { createVectorStore } from "./vector-store";
+import { nextVersion } from "./store";
+import { readJsonStore, writeJsonStore } from "./json-adapter";
+import type { KnowledgeChunk, KnowledgeRecord, KnowledgeSourceInput, KnowledgeVersion, SourceRecord } from "./entities";
 
-const embeddingProvider = new DeterministicEmbeddingProvider();
+const deterministicEmbeddingProvider = new DeterministicEmbeddingProvider();
+const vectorStore = createVectorStore();
 
 function checksum(content: string) {
   return createHash("sha256").update(content).digest("hex");
@@ -16,7 +22,19 @@ function tokenCount(text: string) {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
-function defaultMetadata(source: KnowledgeSource) {
+function selectEmbeddingProvider() {
+  return EMBEDDING_PROVIDER === "deterministic"
+    ? deterministicEmbeddingProvider
+    : createEmbeddingProviderSelection().provider;
+}
+
+function selectRepositories() {
+  return MEMORY_BACKEND === "postgres" && hasDatabaseUrl()
+    ? createPgRepositories()
+    : createJsonRepositories(readJsonStore, writeJsonStore);
+}
+
+function defaultMetadata(source: KnowledgeSourceInput) {
   return {
     domain: source.domain ?? "PUB Holding",
     category: source.category ?? "Master Context",
@@ -30,37 +48,85 @@ function defaultMetadata(source: KnowledgeSource) {
   };
 }
 
-export async function ingestKnowledgeFromFile(input: KnowledgeSource & { filePath: string }) {
+function createVersionRecord(knowledgeId: string, version: string, content: string, sourceUri: string): KnowledgeVersion {
+  const createdAt = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    knowledgeId,
+    version,
+    content,
+    checksum: checksum(content),
+    sourceUri,
+    createdAt
+  };
+}
+
+function toSourceRecord(source: KnowledgeSourceInput): SourceRecord {
+  const now = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    sourceType: source.sourceType,
+    uri: source.sourceUri,
+    title: source.title,
+    version: source.version,
+    visibility: source.visibility ?? "INTERNAL",
+    createdAt: now,
+    updatedAt: now,
+    metadata: {
+      author: source.author ?? null,
+      owner: source.owner ?? null,
+      domain: source.domain ?? null,
+      category: source.category ?? null,
+      entityType: source.entityType ?? null,
+      entityId: source.entityId ?? null,
+      tags: source.tags ?? [],
+      permissions: source.permissions ?? []
+    }
+  };
+}
+
+export async function ingestKnowledgeFromFile(input: KnowledgeSourceInput & { filePath: string }) {
   const { filePath, ...source } = input;
   const parsed = await parseSourceFile(resolve(filePath));
   const content = cleanText(parsed.text);
-  const store = await readStore();
+  const repositories = selectRepositories();
+  const embeddingProvider = selectEmbeddingProvider();
   const sourceChecksum = checksum(content);
-  const existing = store.knowledge.find((item) => item.sourceUri === source.sourceUri);
-  const version = existing ? nextVersion(existing.version) : source.version;
+  const existingKnowledge = await repositories.knowledge.getKnowledgeBySourceUri(source.sourceUri);
+  const existing = existingKnowledge ?? null;
   const knowledgeId = existing?.id ?? randomUUID();
-  const chunks = chunkText(content).map(async (chunk, index) => {
-    const embedding = await embeddingProvider.embed(chunk);
-    return {
-      id: randomUUID(),
-      knowledgeId,
-      version,
-      content: chunk,
-      index,
-      tokenCount: tokenCount(chunk),
-      embedding,
-      sourceUri: source.sourceUri,
-      provenance: {
-        parser: parsed.parser,
-        checksum: sourceChecksum
-      }
-    } satisfies KnowledgeChunk;
-  });
+  const version = existing ? nextVersion(existing.version) : source.version;
+  const sourceRecord = toSourceRecord(source);
+  await repositories.sources.upsertSource(sourceRecord);
 
-  const chunkRecords = await Promise.all(chunks);
-  const combinedEmbedding = await embeddingProvider.embed(content);
+  const chunkRecords = await Promise.all(
+    chunkText(content).map(async (chunk, index) => {
+      const embedding = await embeddingProvider.embed(chunk);
+      return {
+        id: randomUUID(),
+        knowledgeId,
+        version,
+        content: chunk,
+        index,
+        tokenCount: tokenCount(chunk),
+        embedding,
+        sourceId: sourceRecord.id,
+        sourceUri: source.sourceUri,
+        provenance: {
+          parser: parsed.parser,
+          checksum: sourceChecksum,
+          page: null,
+          section: null,
+          heading: null,
+          offset: null
+        }
+      } satisfies KnowledgeChunk;
+    })
+  );
+
   const metadata = defaultMetadata(source);
   const createdAt = new Date().toISOString();
+  const versionRecord = createVersionRecord(knowledgeId, version, content, source.sourceUri);
   const record: KnowledgeRecord = {
     id: knowledgeId,
     title: source.title,
@@ -69,6 +135,7 @@ export async function ingestKnowledgeFromFile(input: KnowledgeSource & { filePat
     category: metadata.category,
     entityType: metadata.entityType,
     entityId: metadata.entityId,
+    sourceId: sourceRecord.id,
     source: source.sourceUri,
     sourceType: source.sourceType,
     sourceUri: source.sourceUri,
@@ -87,50 +154,48 @@ export async function ingestKnowledgeFromFile(input: KnowledgeSource & { filePat
       chunkCount: chunkRecords.length,
       chunkIds: chunkRecords.map((item) => item.id)
     },
-    versions: [
-      ...(existing?.versions ?? []),
-      {
-        id: randomUUID(),
-        version,
-        content,
-        checksum: sourceChecksum,
-        sourceUri: source.sourceUri,
-        createdAt
-      }
-    ],
-    embedding: combinedEmbedding
+    versions: [...(existing?.versions ?? []), versionRecord]
   };
 
-  store.knowledge = store.knowledge.filter((item) => item.id !== knowledgeId);
-  store.knowledge.push(record);
-  store.chunks = store.chunks.filter((item) => item.knowledgeId !== knowledgeId);
-  store.chunks.push(...chunkRecords);
-  await writeStore(store);
+  await repositories.knowledge.upsertKnowledge(record);
+  await repositories.chunks.replaceChunks(record.id, chunkRecords);
+  await vectorStore.upsert(
+    chunkRecords.map((chunk) => ({
+      id: chunk.id,
+      knowledgeId: chunk.knowledgeId,
+      chunkId: chunk.id,
+      embedding: chunk.embedding,
+      metadata: {
+        sourceUri: chunk.sourceUri,
+        version: chunk.version,
+        chunkIndex: chunk.index
+      }
+    }))
+  );
 
   return buildKnowledgeView(record, chunkRecords);
 }
 
 export async function listKnowledge() {
-  const store = await readStore();
-  return store.knowledge;
+  const repositories = selectRepositories();
+  return repositories.knowledge.listKnowledge();
 }
 
 export async function getKnowledgeById(id: string) {
-  const store = await readStore();
-  return store.knowledge.find((item) => item.id === id) ?? null;
+  const repositories = selectRepositories();
+  return repositories.knowledge.getKnowledgeById(id);
 }
 
 export async function getKnowledgeVersions(id: string) {
-  const item = await getKnowledgeById(id);
-  return item?.versions ?? [];
+  const repositories = selectRepositories();
+  return repositories.knowledge.listKnowledgeVersions(id);
 }
 
 export async function getProvenance(id: string) {
-  const store = await readStore();
-  const record = store.knowledge.find((item) => item.id === id);
+  const repositories = selectRepositories();
+  const record = await repositories.knowledge.getKnowledgeById(id);
   if (!record) return null;
-
-  const chunks = store.chunks.filter((chunk) => chunk.knowledgeId === id);
+  const chunks = await repositories.chunks.listChunksByKnowledge(id);
   return {
     knowledge: record,
     chunks
@@ -138,15 +203,18 @@ export async function getProvenance(id: string) {
 }
 
 export async function searchKnowledge(query: string, filters?: { domain?: string; entityId?: string }) {
-  const store = await readStore();
-  const embedding = await embeddingProvider.embed(query);
-  const filteredKnowledge = store.knowledge.filter((item) => {
+  const repositories = selectRepositories();
+  const embeddingProvider = selectEmbeddingProvider();
+  const queryEmbedding = await embeddingProvider.embed(query);
+  const records = await repositories.knowledge.listKnowledge();
+  const chunks = await repositories.chunks.listAllChunks();
+  const filteredKnowledge = records.filter((item) => {
     if (filters?.domain && item.domain !== filters.domain) return false;
     if (filters?.entityId && item.entityId !== filters.entityId) return false;
     return true;
   });
-  const filteredChunks = store.chunks.filter((chunk) => filteredKnowledge.some((item) => item.id === chunk.knowledgeId));
-  const scored = scoreChunks(embedding, filteredChunks).slice(0, 8);
+  const filteredChunks = chunks.filter((chunk) => filteredKnowledge.some((item) => item.id === chunk.knowledgeId));
+  const scored = scoreChunks(queryEmbedding, filteredChunks).slice(0, 8);
   return scored.map((chunk) => {
     const knowledge = filteredKnowledge.find((item) => item.id === chunk.knowledgeId);
     return {
@@ -158,11 +226,22 @@ export async function searchKnowledge(query: string, filters?: { domain?: string
 }
 
 export async function getKnowledgeSummary() {
-  const store = await readStore();
+  const knowledge = await listKnowledge();
   return {
-    knowledgeCount: store.knowledge.length,
-    chunkCount: store.chunks.length,
-    domains: Array.from(new Set(store.knowledge.map((item) => item.domain))).sort()
+    knowledgeCount: knowledge.length,
+    chunkCount: (await getChunksCount()),
+    domains: Array.from(new Set(knowledge.map((item) => item.domain))).sort()
   };
 }
 
+async function getChunksCount() {
+  const repositories = selectRepositories();
+  return (await repositories.chunks.listAllChunks()).length;
+}
+
+export async function exportJsonStore() {
+  return readJsonStore();
+}
+
+export { MEMORY_BACKEND, VECTOR_STORE_BACKEND };
+export { createEmbeddingProviderSelection };

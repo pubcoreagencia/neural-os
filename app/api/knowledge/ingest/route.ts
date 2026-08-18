@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ingestKnowledgeFromFile } from "@/lib/memory/service";
-import type { KnowledgeDomain } from "@/lib/memory/types";
+import type { KnowledgeDomain } from "@/lib/memory/entities";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
