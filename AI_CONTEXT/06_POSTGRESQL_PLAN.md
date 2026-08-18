@@ -54,8 +54,16 @@ O plano conceitual já existe no repositório:
 - validar embeddings
 - smoke test de retrieval
 
+## Validação operacional
+
+Existe um verificador de PostgreSQL/pgvector em:
+
+- `lib/memory/postgres-validation.ts`
+- `scripts/postgres-validate.ts`
+
+Ele só confirma o estado real quando `DATABASE_URL` estiver disponível.
+
 ## Risco atual
 
 - sem `DATABASE_URL` real, nenhuma migração pode ser tratada como validada
 - qualquer banco legado com schema antigo exigirá revisão/migração incremental
-

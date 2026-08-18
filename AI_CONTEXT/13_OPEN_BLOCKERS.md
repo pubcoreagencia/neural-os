@@ -8,8 +8,8 @@ Blockers reais ainda existentes:
 4. migration JSON → PostgreSQL ainda não validada contra banco real.
 5. Repository Context ainda incompleto frente ao contrato final.
 6. validação operacional do vector store em produção ainda não existe.
+7. o novo verificador PostgreSQL/pgvector depende de ambiente real para produzir prova operacional.
 
 O que não é blocker:
 
 - falta de Qdrant / Weaviate / OpenSearch / Vespa / Neo4j / RAGFlow / Onyx, porque eles não fazem parte da decisão congelada atual
-

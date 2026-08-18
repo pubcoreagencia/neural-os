@@ -17,6 +17,7 @@ Decisão congelada:
 - `lib/memory/sql.ts` define `chunks.embedding vector(48) not null`
 - `lib/memory/sql.ts` não define `knowledge_vectors`
 - `lib/memory/entities.ts` não carrega embedding no `KnowledgeRecord`
+- `lib/memory/postgres-validation.ts` valida o modelo operacional quando há banco real
 
 ## Parâmetros do modelo
 
@@ -39,4 +40,3 @@ Filtros esperados na camada de aplicação/repositório:
 
 O vector store serve ao chunk.
 O knowledge é agregado canônico, não o vetor principal.
-

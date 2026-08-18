@@ -10,6 +10,7 @@ Architecture freeze / handoff package.
 - domínio separado
 - vector model congelado em `chunks.embedding`
 - PostgreSQL preparado, não conectado
+- validador operacional PostgreSQL/pgvector adicionado, mas dependente de `DATABASE_URL`
 - embeddings reais não conectados
 
 ## Current Gate
@@ -47,7 +48,7 @@ No momento da criação deste pacote, o repositório estava com mudanças locais
 
 ## Next Action
 
-Continuar a fundação PostgreSQL/pgvector apenas quando houver ambiente real e decisão explícita.
+Executar a validação operacional PostgreSQL/pgvector em ambiente real quando `DATABASE_URL` estiver disponível; até lá, o gate permanece fechado.
 
 ## Do Not Do
 
@@ -64,4 +65,3 @@ Continuar a fundação PostgreSQL/pgvector apenas quando houver ambiente real e 
 3. Refaça `git status --short`.
 4. Reexecute os testes principais.
 5. Só então avance para a próxima fase aprovada.
-

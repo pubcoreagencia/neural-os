@@ -45,12 +45,14 @@ Arquivos principais:
 - `lib/memory/embedding-providers.ts`
 - `lib/memory/json-adapter.ts`
 - `lib/memory/db.ts`
+- `lib/memory/postgres-validation.ts`
 
 Status:
 
 - ingestão, parser, chunking, retrieval, provenance e versioning estão funcionais no nível atual
 - JSON storage existe como adapter de desenvolvimento/MVP
 - PostgreSQL está preparado em código, mas não conectado em ambiente real
+- existe um verificador operacional de PostgreSQL/pgvector para uso quando `DATABASE_URL` estiver disponível
 - vector store opera sobre `chunks`
 
 ## Tests
@@ -66,4 +68,3 @@ Status:
 - PostgreSQL preparado não significa PostgreSQL conectado
 - Repository Context existe, mas ainda está incompleto frente ao contrato final
 - documentação antiga ainda pode conter linguagem mais ampla do que o código atual
-

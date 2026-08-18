@@ -9,6 +9,7 @@
     "preview:static": "node scripts/preview-static.mjs",
     "memory:migrate:schema": "node --import tsx scripts/memory-migrate.ts schema",
     "memory:migrate:json": "node --import tsx scripts/memory-migrate.ts json-to-postgres",
+    "memory:validate:postgres": "node --import tsx scripts/postgres-validate.ts",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint . --max-warnings=0",
     "test": "node --import tsx --test"
